@@ -27,10 +27,6 @@ torch.manual_seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 rng = np.random.default_rng(12345)
-
-# f = vol_obj(in_size=seq_len, out_size=1).to(device)
-
-
 returns = pd.read_csv('Returns.csv')
 
 

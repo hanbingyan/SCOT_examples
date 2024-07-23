@@ -1,5 +1,4 @@
 # Volatility calibration
-
 import torch
 import os
 import torch.nn as nn
@@ -8,20 +7,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import argparse
-from datetime import datetime
-from nets import basis_net, vol_gen, mv_obj
-from vol_config import *
+
+from nets import basis_net, rtn_gen
+from configs import *
 from utils import *
 
 def obj(x):
     x = torch.mean(x, dim=2)
     x = torch.prod(1 + x, dim=1)
-    return x - 1
+    x = x - 1
+    return -x
 
 
 def c(x, y, p=1):
     '''
-    L2 distance between vectors, using expanding and hence is more memory intensive
+    L1 distance between vectors, using expanding and hence is more memory intensive
     :param x: x is tensor of shape [batch_size, time steps, features]
     :param y: y is tensor of shape [batch_size, time steps, features]
     :param p: power
@@ -31,7 +31,7 @@ def c(x, y, p=1):
     y_lin = y.unsqueeze(0)
     b = torch.sum((torch.abs(x_col - y_lin)) ** p, -1)
     c = torch.sum(b, -1)
-    return c/x.shape[0]
+    return c/10.0
 
 
 
@@ -109,124 +109,126 @@ def train(gen_Y, f, idx, args):
         var_hist[iter] = -out_loss.item() + lam.item()*radius
         lam_hist[iter] = lam.item()
         cost_hist[iter] = torch.sum(c(x,y)*out_pi).item()
-        f_mean[iter] = f(y).mean().item()
+        f_mean[iter] = -f(y).mean().item()
 
 
-        if iter % 200 == 0:
-            # print('y', y[0, :, :])
-            print('iter', iter, 'dual', var_hist[iter].item(), 'f(y)', -f_mean[iter],
-                  'HMPi', HMPi.mean().item(), 'lam', lam.item(), 'cost', torch.sum(c(x, y) * out_pi).item())
+        # if iter % 200 == 0:
+        #     # print('y', y[0, :, :])
+        #     print('iter', iter, 'dual', var_hist[iter].item(), 'f(y)', f_mean[iter],
+        #           'HMPi', HMPi.mean().item(), 'lam', lam.item(), 'cost', torch.sum(c(x, y) * out_pi).item())
 
 
-    # x_last = x[-1, :, :].reshape(-1).cpu().numpy()
-    # y_last = y[-1, :, :].reshape(-1).detach().cpu().numpy()
 
     return var_hist.numpy(), lam_hist.numpy(), cost_hist.numpy(), f_mean.numpy()
 
 ############## Main #######################
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Volatility estimation')
-    parser.add_argument('--radius', type=float, default=0.05, help='Wasserstein ball radius')
-    parser.add_argument('--lam_init', type=float, default=10.0, help='Initial value of lambda')
-    parser.add_argument('--cot', dest='causal', action='store_true')
-    parser.add_argument('--ot', dest='causal', action='store_false')
-    parser.set_defaults(causal=True)
-    args = parser.parse_args()
+    for radi in [0.1]:
+        print(bcolors.GREEN + 'Current radius', radi, bcolors.ENDC)
 
-    risk_aver = 0.1
-
-    dual_runs = []
-    lam_runs = []
-    cost_runs = []
-    f_runs = []
-
-    NaiveRtn_runs = []
-
-    for scene in range(n_runs):
-
-        scene = scene*10
+        parser = argparse.ArgumentParser(description='Volatility estimation')
+        parser.add_argument('--radius', type=float, default=radi, help='Wasserstein ball radius')
+        parser.add_argument('--lam_init', type=float, default=10.0, help='Initial value of lambda')
+        parser.add_argument('--cot', dest='causal', action='store_true')
+        parser.add_argument('--ot', dest='causal', action='store_false')
+        parser.set_defaults(causal=True)
+        args = parser.parse_args()
 
 
-        gen_Y = vol_gen(in_size=n_stock, out_size=n_stock).to(device)
+        dual_runs = []
+        lam_runs = []
+        cost_runs = []
+        f_runs = []
 
-        # # ######### Pretraining of generator Y ##########
-        # criterion = nn.MSELoss()
-        # gen_opt = optim.Adam(list(gen_Y.parameters()), lr=1e-4)
-        #
-        # for ind in range():
-        #     # in_x = torch.rand(batch, seq_len, n_stock, dtype=torch.float, device=device)
-        #     # in_x = (in_x - 0.5) / 0.5*0.1
-        #     # in_x[:, :, 0] += 0.1
-        #     # in_x[:, :, 4] -= 0.1
-        #
-        #     x = return_sample(start_idx=idx, batch=batch, seq_len=seq_len)
-        #     x = torch.tensor(x, dtype=torch.float, device=device)
-        #
-        #
-        #     gen_loss = criterion(gen_Y(in_x), in_x)
-        #     gen_Y.zero_grad()
-        #     gen_loss.backward()
-        #     gen_opt.step()
-        #
-        #     if ind % 50 == 0:
-        #         print('gen loss', gen_loss.item())
+        NaiveRtn_runs = []
 
-        var_hist, lam_hist, cost_hist, f_mean = train(gen_Y, obj, scene, args)
+        for scene in range(9):
+
+            scene = scene*10
 
 
-        out_of_sample_idx = scene + batch + seq_len
-        out_of_sample_x = return_sample(out_of_sample_idx, batch=1, seq_len=seq_len)
+            gen_Y = rtn_gen(in_size=n_stock, out_size=n_stock).to(device)
+
+            # # ######### Pretraining of generator Y ##########
+            # criterion = nn.MSELoss()
+            # gen_opt = optim.Adam(list(gen_Y.parameters()), lr=1e-4)
+            #
+            # for ind in range():
+            #     # in_x = torch.rand(batch, seq_len, n_stock, dtype=torch.float, device=device)
+            #     # in_x = (in_x - 0.5) / 0.5*0.1
+            #     # in_x[:, :, 0] += 0.1
+            #     # in_x[:, :, 4] -= 0.1
+            #
+            #     x = return_sample(start_idx=idx, batch=batch, seq_len=seq_len)
+            #     x = torch.tensor(x, dtype=torch.float, device=device)
+            #
+            #
+            #     gen_loss = criterion(gen_Y(in_x), in_x)
+            #     gen_Y.zero_grad()
+            #     gen_loss.backward()
+            #     gen_opt.step()
+            #
+            #     if ind % 50 == 0:
+            #         print('gen loss', gen_loss.item())
+
+            var_hist, lam_hist, cost_hist, f_mean = train(gen_Y, obj, scene, args)
+
+            print('Worst return:', f_mean[-10:].mean())
 
 
-        naive_weights = np.ones(n_stock)/n_stock
-        naive_rtn = np.matmul(out_of_sample_x, naive_weights)
-        naive_rtn = np.prod(1 + naive_rtn)
-        print('Naive return:', naive_rtn-1)
-
-        NaiveRtn_runs.append(naive_rtn)
+            out_of_sample_idx = scene + batch + seq_len
+            out_of_sample_x = return_sample(out_of_sample_idx, batch=1, seq_len=seq_len)
 
 
-        dual_runs.append(var_hist)
-        lam_runs.append(lam_hist)
-        cost_runs.append(cost_hist)
-        f_runs.append(f_mean)
+            naive_weights = np.ones(n_stock)/n_stock
+            naive_rtn = np.matmul(out_of_sample_x, naive_weights)
+            naive_rtn = np.prod(1 + naive_rtn)
+            naive_rtn = naive_rtn - 1
+            print('Naive return:', naive_rtn)
+
+            NaiveRtn_runs.append(naive_rtn)
 
 
-    dual_runs = np.array(dual_runs)
-    lam_runs = np.array(lam_runs)
-    cost_runs = np.array(cost_runs)
-    f_runs = np.array(f_runs)
-
-    NaiveRtn_runs = np.array(NaiveRtn_runs)
+            dual_runs.append(var_hist)
+            lam_runs.append(lam_hist)
+            cost_runs.append(cost_hist)
+            f_runs.append(f_mean)
 
 
-    # sub_folder = 'mv_causal_radi02_{}_risk_{}_{}.{}'.format(args.causal, risk_aver,
-    #                                                         datetime.now().strftime('%H'), datetime.now().strftime('%M'))
-    #
-    # log_dir = './logs/{}'.format(sub_folder)
-    #
-    # if not os.path.exists(log_dir):
-    #     os.makedirs(log_dir)
-    #
-    # # Save params configuration
-    # with open('{}/params.txt'.format(log_dir), 'w') as fp:
-    #     fp.write('Params setting \n')
-    #     fp.write('COT or not: {} \n'.format(args.causal))
-    #     fp.write('batch size {}, seq_len {}, n_iter {} \n'.format(batch, seq_len, n_iter))
-    #     fp.write('Radius: {} \n'.format(args.radius))
-    #     fp.write('Lambda Init: {} \n'.format(args.lam_init))
-    #
-    # with open('{}/dual.pickle'.format(log_dir), 'wb') as fp:
-    #     pickle.dump(dual_runs, fp)
-    #
-    # with open('{}/sam.pickle'.format(log_dir), 'wb') as fp:
-    #     pickle.dump(f_runs, fp)
-    #
-    # with open('{}/lam.pickle'.format(log_dir), 'wb') as fp:
-    #     pickle.dump(lam_runs, fp)
-    #
-    # with open('{}/cost.pickle'.format(log_dir), 'wb') as fp:
-    #     pickle.dump(cost_runs, fp)
-    #
-    # with open('{}/NaiveRtn.pickle'.format(log_dir), 'wb') as fp:
-    #     pickle.dump(NaiveRtn_runs, fp)
+        dual_runs = np.array(dual_runs)
+        lam_runs = np.array(lam_runs)
+        cost_runs = np.array(cost_runs)
+        f_runs = np.array(f_runs)
+
+        NaiveRtn_runs = np.array(NaiveRtn_runs)
+
+        sub_folder = 'RtnEst_SCOT_radi_{}'.format(args.radius)
+        log_dir = './logs/{}'.format(sub_folder)
+
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        # Save params configuration
+        with open('{}/params.txt'.format(log_dir), 'w') as fp:
+            fp.write('Params setting \n')
+            fp.write('batch size {}, seq_len {}, n_iter {} \n'.format(batch, seq_len, n_iter))
+            fp.write('radius: {} \n'.format(args.radius))
+            fp.write('lambda init: {} \n'.format(args.lam_init))
+
+        with open('{}/dual.pickle'.format(log_dir), 'wb') as fp:
+            pickle.dump(dual_runs, fp)
+
+        with open('{}/sam.pickle'.format(log_dir), 'wb') as fp:
+            pickle.dump(f_runs, fp)
+
+        with open('{}/lam.pickle'.format(log_dir), 'wb') as fp:
+            pickle.dump(lam_runs, fp)
+
+        with open('{}/cost.pickle'.format(log_dir), 'wb') as fp:
+            pickle.dump(cost_runs, fp)
+
+        with open('{}/NaiveRtn.pickle'.format(log_dir), 'wb') as fp:
+            pickle.dump(NaiveRtn_runs, fp)
+
+
+
