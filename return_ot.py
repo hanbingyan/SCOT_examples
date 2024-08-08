@@ -1,4 +1,4 @@
-# Real parameter given
+# Worst return estimation by OT
 import torch
 import torch.optim as optim
 import pickle
@@ -81,10 +81,10 @@ def train(f, idx, args):
     return dual_hist.numpy(), lam_hist.numpy(), sam_mean.numpy(), cost_hist.numpy()
 
 if __name__ == '__main__':
-    for radi in [0.1]:
+    for radi in [0.05, 0.1, 0.2]:
         print(bcolors.GREEN + 'Current radius', radi, bcolors.ENDC)
 
-        parser = argparse.ArgumentParser(description='Volatility estimation')
+        parser = argparse.ArgumentParser(description='Worst return estimation')
         parser.add_argument('--radius', type=float, default=radi, help='Wasserstein ball radius')
         parser.add_argument('--lam_init', type=float, default=10.0, help='Initial value of lambda')
         args = parser.parse_args()
@@ -96,24 +96,23 @@ if __name__ == '__main__':
 
         NaiveRtn_runs = []
 
-        for scene in range(9):
-            scene = scene*10
+        for scene in range(40):
+            scene = scene*5
 
 
             dual_hist, lam_hist, sam_mean, cost_hist = train(obj, scene, args)
-            print('worst return', sam_mean[-10:].mean())
+            print('Worst return:', sam_mean[-10:].mean())
 
             out_of_sample_idx = scene + batch + seq_len
             out_of_sample_x = return_sample(out_of_sample_idx, batch=1, seq_len=seq_len)
 
-            naive_weights = np.ones(n_stock) / n_stock
+            naive_weights = np.ones(n_stock)/n_stock
             naive_rtn = np.matmul(out_of_sample_x, naive_weights)
             naive_rtn = np.prod(1 + naive_rtn)
             naive_rtn = naive_rtn - 1
             print('Naive return:', naive_rtn)
 
             NaiveRtn_runs.append(naive_rtn)
-
             dual_runs.append(dual_hist)
             lam_runs.append(lam_hist)
             sam_runs.append(sam_mean)
@@ -124,8 +123,6 @@ if __name__ == '__main__':
         lam_runs = np.array(lam_runs)
         sam_runs = np.array(sam_runs)
         cost_runs = np.array(cost_runs)
-
-
         NaiveRtn_runs = np.array(NaiveRtn_runs)
 
         sub_folder = 'RtnEst_OT_radi_{}'.format(args.radius)

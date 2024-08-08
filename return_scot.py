@@ -1,10 +1,9 @@
-# Volatility calibration
+# Worst return estimation by SCOT
 import torch
 import os
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-import matplotlib.pyplot as plt
 import pickle
 import argparse
 
@@ -68,7 +67,7 @@ def train(gen_Y, f, idx, args):
 
         fy = f(y).detach()
         wass_sam, pi = compute_sinkhorn(x, y, h, g, lam, fy, c)
-        in_loss = lam * radius + wass_sam + martingale_regularization(g)
+        in_loss = lam*radius + wass_sam + martingale_regularization(g)
         test_H.zero_grad()
         test_M.zero_grad()
         lam.grad = None
@@ -90,7 +89,7 @@ def train(gen_Y, f, idx, args):
         g = test_M(x).detach()
         y = gen_Y(x)
         h = test_H(y)[:, :-1, :]*(1 + 1/(1 + 0.01*iter))
-        fy = f(y)  ## detach here?
+        fy = f(y)
 
         out_wass, out_pi = compute_sinkhorn(x, y, h, g, lam.detach(), fy, c)
         out_loss = -out_wass
@@ -123,10 +122,10 @@ def train(gen_Y, f, idx, args):
 
 ############## Main #######################
 if __name__ == '__main__':
-    for radi in [0.1]:
+    for radi in [0.05, 0.1, 0.2]:
         print(bcolors.GREEN + 'Current radius', radi, bcolors.ENDC)
 
-        parser = argparse.ArgumentParser(description='Volatility estimation')
+        parser = argparse.ArgumentParser(description='Worst return estimation')
         parser.add_argument('--radius', type=float, default=radi, help='Wasserstein ball radius')
         parser.add_argument('--lam_init', type=float, default=10.0, help='Initial value of lambda')
         parser.add_argument('--cot', dest='causal', action='store_true')
@@ -142,11 +141,9 @@ if __name__ == '__main__':
 
         NaiveRtn_runs = []
 
-        for scene in range(9):
+        for scene in range(40):
 
-            scene = scene*10
-
-
+            scene = scene*5
             gen_Y = rtn_gen(in_size=n_stock, out_size=n_stock).to(device)
 
             # # ######### Pretraining of generator Y ##########
@@ -174,7 +171,6 @@ if __name__ == '__main__':
             var_hist, lam_hist, cost_hist, f_mean = train(gen_Y, obj, scene, args)
 
             print('Worst return:', f_mean[-10:].mean())
-
 
             out_of_sample_idx = scene + batch + seq_len
             out_of_sample_x = return_sample(out_of_sample_idx, batch=1, seq_len=seq_len)
